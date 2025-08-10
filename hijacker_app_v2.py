@@ -21,7 +21,7 @@ class RedirectHandler(BaseHTTPRequestHandler):
     # Método para tratar requisições GET: Envia resposta 302 com Location para o repositório GitHub
     def do_GET(self):
         self.send_response(302)  # Código de status 302: Found (redirecionamento temporário)
-        self.send_header('Location', 'https://github.com/Joyce-Ribeiro/hijacker_app')  # Cabeçalho com URL de redirecionamento
+        self.send_header('Location', 'https://github.com/Joyce-Ribeiro/SantaClaraPapelaria')  # Cabeçalho com URL de redirecionamento
         self.end_headers()  # Finaliza os cabeçalhos da resposta
 
     # Método para HEAD: Chama do_GET para reutilizar a lógica de redirecionamento
@@ -103,8 +103,17 @@ def generate_self_signed_cert():
 
 # Função para aplicar regras de iptables para redirecionamento
 def apply_iptables_rules():
-    # Lista de comandos iptables: Redireciona portas 80 (HTTP) e 443 (HTTPS) para portas locais
+    # Lista de comandos iptables: 
+    # Primeiro, exclusões para IPs do GitHub (para evitar loop infinito no redirecionamento)
+    # Ranges obtidos da API do GitHub[](https://api.github.com/meta)
+    # Em seguida, regras de redirecionamento para portas 80 (HTTP) e 443 (HTTPS)
     commands = [
+        # Exclusões IPv4 para GitHub (evita hijacking do tráfego para o GitHub após redirecionamento)
+        "iptables -t nat -A OUTPUT -p tcp -d 192.30.252.0/22 --dport 443 -j RETURN",
+        "iptables -t nat -A OUTPUT -p tcp -d 185.199.108.0/22 --dport 443 -j RETURN",
+        "iptables -t nat -A OUTPUT -p tcp -d 140.82.112.0/20 --dport 443 -j RETURN",
+        "iptables -t nat -A OUTPUT -p tcp -d 143.55.64.0/20 --dport 443 -j RETURN",
+        # Regras de redirecionamento gerais
         "iptables -t nat -A OUTPUT -p tcp --dport 80 -j REDIRECT --to-port 8080",
         "iptables -t nat -A OUTPUT -p tcp --dport 443 -j REDIRECT --to-port 8443",
     ]
@@ -118,12 +127,12 @@ def apply_iptables_rules():
             print(f"Erro ao aplicar regra: {cmd}\nErro: {e}\nSaída: {e.stderr}")
             sys.exit(1)  # Sai com código de erro 1
     # Mensagem final de aplicação das regras
-    print("Regras de hijacking aplicadas! Todo tráfego HTTP/HTTPS será redirecionado para os servidores locais.")
+    print("Regras de hijacking aplicadas! Todo tráfego HTTP/HTTPS será redirecionado para os servidores locais (exceto GitHub para evitar loop).")
 
 # Função para limpar regras de iptables ao encerrar
 def cleanup_iptables():
     try:
-        # Executa comando para flushar a tabela nat
+        # Executa comando para flushar a tabela nat (remove todas as regras adicionadas)
         subprocess.run(["sudo", "iptables", "-t", "nat", "-F"], check=True)
         print("Regras de iptables removidas.")  # Mensagem de sucesso
     except subprocess.CalledProcessError as e:
@@ -164,7 +173,7 @@ if __name__ == "__main__":
     https_thread = threading.Thread(target=run_https_server, args=(certfile, keyfile), daemon=True)  # Daemon para sair com o main
     https_thread.start()
 
-    # Aplica regras iptables
+    # Aplica regras iptables (agora com exclusões para GitHub)
     apply_iptables_rules()
 
     # Mantém o thread principal vivo com um loop infinito
